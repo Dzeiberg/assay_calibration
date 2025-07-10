@@ -28,6 +28,8 @@ This repository contains the code for fitting the models to pre-processed data i
     ```
 
 ## Usage
+
+### Example using Pillar Project Dataframe
 Example usage
 ```python
 from assay_calibration.data_utils.dataset import Scoreset
@@ -37,6 +39,30 @@ import json
 
 dataframe = pd.read_csv("test/example_data.csv")
 scoreset = Scoreset(dataframe)
+fit = Fit(scoreset)
+fit.run(core_limit=1, num_fits=1, component_range=[2, 3])
+result = fit.to_dict()
+print(json.dumps(result, indent=4))
+```
+### Example using other data
+
+**Input File Format**
+```csv
+scores,sample_assignments
+0.1,sample0
+0.2,sample1
+0.15,sample2
+0.07,sample0
+0.17,sample2
+```
+
+```python
+from assay_calibration.data_utils.dataset import BasicScoreset
+from assay_calibration.fit_utils.fit import Fit
+import pandas as pd
+import json
+
+scoreset = BasicScoreset.from_csv("test/example_table.csv")
 fit = Fit(scoreset)
 fit.run(core_limit=1, num_fits=1, component_range=[2, 3])
 result = fit.to_dict()
