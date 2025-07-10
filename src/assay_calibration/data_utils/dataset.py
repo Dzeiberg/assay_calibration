@@ -6,6 +6,7 @@ from functools import reduce
 import logging
 from io import StringIO
 from tqdm import tqdm
+from typing import Tuple
 
 logging.basicConfig()
 logging.root.setLevel(logging.NOTSET)
@@ -47,6 +48,80 @@ def _tolist(value, sep="^"):
 
 def _clean_clinsigs(values):
     return [v.split(";")[0] if isinstance(v, str) else "nan" for v in values]
+
+
+class BasicScoreset:
+    def __init__(self, scores: np.ndarray, sample_assignments: np.ndarray):
+        self.scores = scores
+        self.sample_assignments = sample_assignments
+        self.validate_inputs()
+        self.validate_sample_assignments()
+
+    def validate_inputs(self):
+        n_observations = self.scores.shape[0]
+        if self.sample_assignments.shape[0] != n_observations:
+            raise ValueError(
+                f"Number of observations in scores {n_observations:,d} does not match number of rows in sample_assignments {self.sample_assignments.shape[0]:,d}"
+            )
+
+    def validate_sample_assignments(self):
+        ndim = self.sample_assignments.ndim
+        if ndim == 1:
+            print(
+                "Assuming sample_assignments is a list of sample identifiers, converting to 2D array."
+            )
+            sample_ids = np.array(self.sample_assignments)
+            unique_samples = list(set(sample_ids))
+            self.sample_assignments = np.zeros(
+                (len(sample_ids), len(unique_samples)), dtype=bool
+            )
+            for sampleNum, sample_id in enumerate(unique_samples):
+                self.sample_assignments[:, sampleNum] = sample_ids == sample_id
+        elif ndim != 2:
+            raise ValueError(
+                f"sample_assignments must be a 1D list of sample ids or 2D array of one-hot vectors, got {ndim} dimensions"
+            )
+
+    @property
+    def samples(self):
+        """
+        Iterate over the samples in the scoreset, yielding the sample scores and sample name.
+        """
+        for sample_index in range(self.sample_assignments.shape[1]):
+            sample_scores = self.scores[self.sample_assignments[:, sample_index]]
+            if len(sample_scores) > 0:
+                yield sample_scores, f"Sample {sample_index + 1}"
+
+    @classmethod
+    def from_csv(cls, csv_path: Path | str, **kwargs):
+        """
+        Create a BasicScoreset from a CSV file.
+
+        Required columns:
+         - scores: The scores for each observation
+         - sample_assignments: The ID of the sample to which each observation belongs
+            Example:
+            scores,sample_assignments
+            0.5,1
+            0.7,2
+            0.3,1
+
+        Parameters
+        ----------
+        csv_path : Path|str
+            The path to the CSV file to create the scoreset from
+        """
+        csv_path = Path(csv_path)
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+        df = pd.read_csv(csv_path)
+        if "scores" not in df.columns or "sample_assignments" not in df.columns:
+            raise ValueError(
+                "CSV must contain 'scores' and 'sample_assignments' columns"
+            )
+        scores = np.array(df["scores"].values)
+        sample_assignments = np.array(df["sample_assignments"].values)
+        return cls(scores, sample_assignments, **kwargs)
 
 
 class Scoreset:
