@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from multicomp_model import MulticomponentCalibrationModel
-from data_utils.dataset import Scoreset
+from data_utils.dataset import Scoreset, BasicScoreset
 from scipy.stats import skewnorm
 import numpy as np
 from typing import Tuple
@@ -101,7 +101,7 @@ def sample_specific_bootstrap(sample_assignments):
 
 
 class Fit:
-    def __init__(self, scoreset: Scoreset):
+    def __init__(self, scoreset: Scoreset | BasicScoreset):
         self.scoreset = scoreset
         self.fit_result = {}
 
@@ -228,7 +228,7 @@ class Fit:
         Evaluate the fit quality
         """
         self._eval_metrics = {}
-        for sampleNum, (sample_scores, sample_name) in enumerate(self.scoreset.samples):
+        for sampleNum, (sample_scores, sample_name) in enumerate(self.scoreset.samples):  # type: ignore
             u = np.unique(sample_scores)
             u.sort()
             self._eval_metrics[sample_name] = {}
