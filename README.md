@@ -68,7 +68,13 @@ fit.run(core_limit=1, num_fits=1, component_range=[2, 3])
 result = fit.to_dict()
 print(json.dumps(result, indent=4))
 ```
+### Hyper-parameters
 
+The `num_fits` hyper-parameter encodes how many times model fitting should be repeated for each of the component number candidates. The final fit is that with the maximum likelihood estimate on a held-out validation set. Each model fit starts with a random initialization, so increasing `num_fits` often results in better models. Experiments were run with `num_fits=100`.
+
+The `component_range` hyper-parameter encodes the possible number of skew-normal components used to model the data. Data exploration, visual inspection, and domain knowledge can help in choosing these values. Consecutive components are constrained such that the likelihood ratio is monotonic, preventing a wide component from overtaking the other component at extreme values.
+
+Uncertainty in the distribution fits can be obtained by fitting models to many bootstrapped scoresets, i.e., set of points sampled with replacement from the full scoreset.
 ## Contributing
 
 Contributions are welcome! Please submit issues or pull requests to help improve the project.
