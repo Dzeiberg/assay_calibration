@@ -83,6 +83,13 @@ class BasicScoreset:
             )
 
     @property
+    def n_samples(self):
+        """
+        Return the number of samples in the scoreset.
+        """
+        return self.sample_assignments.shape[1]
+
+    @property
     def samples(self):
         """
         Iterate over the samples in the scoreset, yielding the sample scores and sample name.
