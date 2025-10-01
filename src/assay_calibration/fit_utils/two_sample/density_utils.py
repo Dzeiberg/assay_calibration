@@ -23,24 +23,24 @@ def joint_densities(x, params, weights):
         ]
     )
 
+
 def log_joint_densities(x, params, weights):
     """
     Return log of weighted pdfs to avoid overflow
     Returns: log(w * pdf(x)) for each component
     """
     weights = np.asarray(weights)
-    
+
     # Compute all log PDFs
-    log_pdfs = np.array([
-        sps.skewnorm.logpdf(x, a, loc, scale) 
-        for (a, loc, scale) in params
-    ])
-    
+    log_pdfs = np.array(
+        [sps.skewnorm.logpdf(x, a, loc, scale) for (a, loc, scale) in params]
+    )
+
     # Add log weights
-    with np.errstate(divide='ignore'):
+    with np.errstate(divide="ignore"):
         log_weights = np.log(weights)
     log_weights[weights == 0] = -np.inf
-    
+
     # Return log(w * pdf) = log(w) + log(pdf)
     return log_weights[:, None] + log_pdfs
 
@@ -52,7 +52,7 @@ def component_posteriors(x, canonical_params, individual_sample_weights):
         [sps.skewnorm.logpdf(x.ravel(), *p) for p in canonical_params], axis=0
     )
     numerators = np.zeros_like(log_pdfs)
-    with np.errstate(divide='ignore'): # ignore zero sample weight warning
+    with np.errstate(divide="ignore"):  # ignore zero sample weight warning
         numerators = log_pdfs + np.log(individual_sample_weights)
     d = np.zeros_like(numerators[0])
     d = logsumexp(numerators, axis=0)
@@ -109,9 +109,8 @@ def alternate_to_canonical(loc, Delta, Gamma):
             f"Invalid skewness parameter: {a} from Delta: {Delta}, Gamma: {Gamma}"
         )
     scale = np.sqrt(Gamma + Delta**2)
-    
-    return tuple(map(float, (a, loc, scale)))
 
+    return tuple(map(float, (a, loc, scale)))
 
 
 def _get_delta(params):
@@ -129,8 +128,10 @@ def get_likelihood(observations, sample_indicators, component_params, weights):
         #     X, component_params, weights[sample_num]
         # ).sum(axis=0)
         # Likelihood += np.log(sample_likelihood).sum().item()
-        log_weighted_pdfs = log_joint_densities(X, component_params, weights[sample_num])
+        log_weighted_pdfs = log_joint_densities(
+            X, component_params, weights[sample_num]
+        )
         # Sum across components using logsumexp
         log_sample_likelihood = logsumexp(log_weighted_pdfs, axis=0)
-        Likelihood += log_sample_likelihood.sum()
+        Likelihood += log_sample_likelihood.sum()  # type: ignore
     return Likelihood
