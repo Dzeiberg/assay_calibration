@@ -46,10 +46,10 @@ if __name__ == "__main__":
     # args = parser.parse_args()
     argdict = dict(
         scoreset_name="BRCA1_Findlay_2018",
-        scoresets_dir="/Users/dz/Documents/research/pillar_project_data/dataset_09192025/scoresets/",
+        scoresets_dir="/data/dzeiberg/pillar_project/pillar_project_data/dataset_09192025/scoresets/",
         model_selection_save_dir="test/model_selection_test_results/",
-        N_bootstraps=4,
-        N_restarts=10,
+        N_bootstraps=100,
+        N_restarts=100,
     )
     args = argparse.Namespace(**argdict)
 
