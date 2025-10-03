@@ -332,7 +332,8 @@ class Fit:
         if os.path.exists(save_path):
             # print(f"Skipping existing: {save_path}")
             return None
-    
+        save_path = Path(save_path)
+        save_path.parent.mkdir(exist_ok=True,parents=True)
         # print(f"Running {save_path}...",flush=True)
         
         try:
