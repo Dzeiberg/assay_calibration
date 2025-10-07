@@ -145,12 +145,12 @@ def single_fit(
     except ZeroDivisionError:
         logging.warning("ZeroDivisionError")
         return dict(
-            component_params=initial_params,
-            weights=W,
-            likelihoods=[*likelihoods, -1 * np.inf],
-            kmeans=kmeans,
-            xlims=xlims,
-            times_submerged=[],
+            component_params=initial_params, # type: ignore
+            weights=W,# type: ignore
+            likelihoods=[*likelihoods, -1 * np.inf],# type: ignore
+            kmeans=kmeans,# type: ignore
+            xlims=xlims,# type: ignore
+            times_submerged=[],# type: ignore
         )
     likelihoods = np.array(
         [
@@ -167,7 +167,8 @@ def single_fit(
     # Run the EM algorithm
     if verbose:
         pbar = tqdm(total=MAX_EM_ITERS, leave=False, desc="EM Iteration")
-
+    # initialize is_underwater
+    is_underwater = not constrained
     try: # return failed fit upon ValueError or ZeroDivisionError
     
         underwater_time = 0
@@ -205,9 +206,9 @@ def single_fit(
                 iterNum=i + 1,
             )
             # enforce minimum scale to accommodate numerical errors
-            for i, (a, loc, scale) in enumerate(updated_component_params):
+            for i, (a, loc, scale) in enumerate(updated_component_params):# type: ignore
                 if scale < MIN_SCALE:
-                    updated_component_params[i] = (a, loc, max(scale, MIN_SCALE))
+                    updated_component_params[i] = (a, loc, max(scale, MIN_SCALE))# type: ignore
     
             # check underwater duration
             if not constrained and check_submerged_duration:
@@ -282,20 +283,20 @@ def single_fit(
     except (ValueError, ZeroDivisionError) as e:
         warnings.warn(f'Failed fit: {e}')
         return dict(
-            component_params=updated_component_params,
-            weights=updated_weights,
-            likelihoods=[*likelihoods, -1 * np.inf],
-            kmeans=kmeans,
-            xlims=xlims,
-            times_submerged=[],
+            component_params=updated_component_params,# type: ignore
+            weights=updated_weights,# type: ignore
+            likelihoods=[*likelihoods, -1 * np.inf],# type: ignore
+            kmeans=kmeans,# type: ignore
+            xlims=xlims,# type: ignore
+            times_submerged=[],# type: ignore
         )
 
     return dict(
-        component_params=updated_component_params,
-        weights=updated_weights,
-        likelihoods=likelihoods,
-        history=history,
-        kmeans=kmeans,
-        xlims=xlims,
-        times_submerged=times_submerged,
+        component_params=updated_component_params,# type: ignore
+        weights=updated_weights,# type: ignore
+        likelihoods=likelihoods,# type: ignore
+        history=history,# type: ignore
+        kmeans=kmeans,# type: ignore
+        xlims=xlims,# type: ignore
+        times_submerged=times_submerged,# type: ignore
     )
