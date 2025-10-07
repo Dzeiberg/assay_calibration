@@ -132,5 +132,5 @@ def get_likelihood(observations, sample_indicators, component_params, weights):
         log_weighted_pdfs = log_joint_densities(X, component_params, weights[sample_num])
         # Sum across components using logsumexp
         log_sample_likelihood = logsumexp(log_weighted_pdfs, axis=0)
-        Likelihood += log_sample_likelihood.sum()
+        Likelihood += log_sample_likelihood.sum() # type: ignore
     return Likelihood
