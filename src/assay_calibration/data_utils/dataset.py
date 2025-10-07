@@ -51,11 +51,12 @@ def _clean_clinsigs(values):
 
 
 class BasicScoreset:
-    def __init__(self, scores: np.ndarray, sample_assignments: np.ndarray):
+    def __init__(self, scores: np.ndarray, sample_assignments: np.ndarray,**kwargs):
         self.scores = scores
         self.sample_assignments = sample_assignments
         self.validate_inputs()
         self.validate_sample_assignments()
+        self.scoreset_name = kwargs.get("scoreset_name", "BasicScoreset")
 
     def validate_inputs(self):
         n_observations = self.scores.shape[0]
@@ -225,23 +226,21 @@ class Scoreset:
                 "dataframe must contain at least one row with a non-NaN auth_reported_score"
             )
         self.dataframe = dataframe
-        self.filter_by_consequence(**kwargs)
+        self.filter_invalid()
+        self.splicing_filter(**kwargs)
         self.variants = [Variant(row) for _, row in self.dataframe.iterrows()]
         self._init_matrices(**kwargs)
 
-    def filter_by_consequence(self, **kwargs):
-        self.missense_only = kwargs.get("missense_only", False)
+    def filter_invalid(self):
+         self.dataframe = self.dataframe[self.dataframe.Flag != "*"]
+
+    def splicing_filter(self, **kwargs):
         self.detects_splice = (
             self.dataframe.loc[:, "splice_measure"].unique()[0] == "Yes"  # type: ignore
         )
-        self.dataframe = self.dataframe[self.dataframe.Flag != "*"]
         if not self.detects_splice:
             self.dataframe = self.dataframe[
                 self.dataframe.simplified_consequence != "Splice Region"
-            ]
-        if self.missense_only:
-            self.dataframe = self.dataframe[
-                self.dataframe.simplified_consequence.isin({"Missense", "Synonymous"})
             ]
 
     @staticmethod
@@ -276,13 +275,23 @@ class Scoreset:
         return len(self.variants)
 
     def _init_matrices(self, **kwargs):
+        """
+        Optional Arguments:
+        - population_type : str : one of {'all_variants',
+                                  'all_nsSNV',
+                                  'all_missense_nsSNV',
+                                  'gnomAD',
+                                  'gnomAD_nsSNV',
+                                  'gnomAD_missense_nsSNV'}
+        
+        """
         self.has_synomyous = any([variant.is_synonymous for variant in self.variants])
         if self.has_synomyous:
             self.NSamples = 4
             self.sample_names = [
                 "Pathogenic/Likely Pathogenic",
                 "Benign/Likely Benign",
-                "gnomAD",
+                "population",
                 "Synonymous",
             ]
         else:
@@ -290,7 +299,7 @@ class Scoreset:
             self.sample_names = [
                 "Pathogenic/Likely Pathogenic",
                 "Benign/Likely Benign",
-                "gnomAD",
+                "population",
             ]
         variants_by_id = self.get_variants_by_id()
         self.n_variants = len(variants_by_id)
@@ -300,6 +309,7 @@ class Scoreset:
         self._scores = np.zeros(self.n_variants)
         self._ids = []
         self._auth_labels = []
+        self.parse_population_type(**kwargs)
         for idx, (_id, variants) in enumerate(variants_by_id.items()):
             self._ids.append(_id)
             self._scores[idx] = variants[0].auth_reported_score
@@ -307,13 +317,43 @@ class Scoreset:
             if any([variant.is_synonymous for variant in variants]):
                 self._sample_assignments[idx, 3] = True
                 continue
-            if any([variant.is_gnomAD for variant in variants]):
+            if any([self.is_population_member(variant) for variant in variants]):
                 self._sample_assignments[idx, 2] = True
             if any([variant.is_pathogenic for variant in variants]):
                 self._sample_assignments[idx, 0] = True
             if any([variant.is_benign for variant in variants]):
                 self._sample_assignments[idx, 1] = True
         self.sample_counts = self._sample_assignments.sum(axis=0)
+
+    def parse_population_type(self,**kwargs):
+        population_type = kwargs.get("population_type",'gnomAD')
+        valid_population_types = {'all_variants',
+                                  'all_nsSNV',
+                                  'all_missense_nsSNV',
+                                  'gnomAD',
+                                  'gnomAD_nsSNV',
+                                  'gnomAD_missense_nsSNV'}
+        if population_type not in valid_population_types:
+            raise ValueError(f"Invalid population type {population_type}; must be in {valid_population_types}")
+        self.population_type = population_type
+
+    def is_population_member(self,variant)->bool:
+        if self.population_type == "all_variants":
+            return True
+        if self.population_type == "all_nsSNV":
+            return variant.is_nsSNV
+        if self.population_type == "all_missense_nsSNV":
+            return variant.simplified_consequence == "missense_variant" and variant.is_nsSNV
+        if self.population_type == "gnomAD":
+            return variant.is_gnomAD
+        if self.population_type == "gnomAD_nsSNV":
+            return variant.is_gnomAD and variant.is_nsSNV
+        if self.population_type == "gnomAD_missense_nsSNV":
+            return variant.is_gnomAD and \
+                variant.is_nsSNV and \
+                variant.simplified_consequence == "missense_variant"
+        return False
+        
 
     def get_variants_by_id(self):
         """
@@ -374,11 +414,24 @@ class Variant:
         self.clinvar_sig = None
         self.gnomad_MAF = None
         self.auth_reported_score = None
+        self.transcript_ref = ""
+        self.transcript_alt = ""
+        self.aa_ref = np.nan
+        self.aa_alt = ""
+        self.hgvs_p = ""
         for k, v in variant_info.items():
             setattr(self, str(k), v)
         self.parse_gnomAD_MAF()
         self.parse_clinvar_sig()
         self.parse_consequences()
+        self.assign_nsSNV()
+
+    def assign_nsSNV(self):
+        # is the variant a nonsynonymous nsSNV
+        self.is_nsSNV = (isinstance(self.transcript_ref,str) and len(self.transcript_ref) == 1) and \
+                        (isinstance(self.transcript_alt,str) and len(self.transcript_alt) == 1) and \
+                        (isinstance(self.hgvs_p,float) | \
+                         (self.aa_ref != self.aa_alt))
 
     def parse_consequences(self):
         self.is_synonymous = (self.simplified_consequence == "Synonymous") or (
