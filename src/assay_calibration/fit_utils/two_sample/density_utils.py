@@ -3,13 +3,13 @@ import scipy.stats as sps
 from scipy.special import logsumexp
 
 
-def mixture_pdf(x, params, weights):
+def mixture_pdf(x, params, weights) -> np.ndarray:
     """
     returns log: pdf of a mixture of skew normal distributions
 
     $ f(x) = a * f_1(x) + (1-a) f_0(x) $
     """
-    return logsumexp(log_joint_densities(x, params, weights), axis=0)
+    return np.array(logsumexp(log_joint_densities(x, params, weights), axis=0))
 
 
 def joint_densities(x, params, weights):

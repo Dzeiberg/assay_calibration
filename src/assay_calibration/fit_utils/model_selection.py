@@ -1,18 +1,20 @@
 from src.assay_calibration.fit_utils.two_sample.fit import single_fit
-from src.assay_calibration.data_utils.dataset import Scoreset
+from src.assay_calibration.data_utils.dataset import Scoreset,BasicScoreset
 from tqdm.auto import trange
 import json
 from pathlib import Path
 import numpy as np
 import scipy.stats as sps
 from typing import List, Dict
-from joblib import Parallel, delayed
-from src.assay_calibration.fit_utils.fit import makeOneHot, sample_specific_bootstrap
+from joblib import Parallel, delayed,parallel_backend
+import random
+from src.assay_calibration.fit_utils.fit import makeOneHot, sample_specific_bootstrap,Fit
 from src.assay_calibration.fit_utils.two_sample.density_utils import get_likelihood
 from src.assay_calibration.fit_utils.utils import serialize_dict
+import os
+import pickle
 
-
-def bootstrapped_likelihood_ratio_test(scoreset: Scoreset, N_bootstraps: int, **kwargs):
+def bootstrapped_likelihood_ratio_test(scoreset: Scoreset, N_bootstraps: int, save_dir, **kwargs):
     """
     Required Args:
     ------------------
@@ -29,7 +31,11 @@ def bootstrapped_likelihood_ratio_test(scoreset: Scoreset, N_bootstraps: int, **
     """
     N_restarts = kwargs.get("N_restarts", 100)
     constrained = kwargs.get("constrained", True)
-    init_method = kwargs.get("init_method", "kmeans")
+    init_method = kwargs.get("init_method", "random")
+    if init_method == "random":
+        init_method = ['kmeans','method_of_moments']
+        random.shuffle(init_method)
+        init_method = init_method[0]
     init_constraint_adjustment = kwargs.get("init_constraint_adjustment", "skew")
     scores = scoreset.scores
     sample_assignments = scoreset.sample_assignments
@@ -88,18 +94,37 @@ def bootstrapped_likelihood_ratio_test(scoreset: Scoreset, N_bootstraps: int, **
         'observed_likelihood_k2': likelihood_two_comp,
         'observed_likelihood_k3': likelihood_three_comp
     }
-    bootstrap_results = Parallel(n_jobs=-1, verbose=N_bootstraps)(
-        delayed(run_bootstrap_iter)(
-            model_two_comps["component_params"],
-            model_two_comps["weights"],
-            sample_sizes,
-            constrained,
-            init_method,
-            init_constraint_adjustment,
-            N_restarts,
-        )
-        for _ in trange(N_bootstraps)
-    )
+    # bootstrap_results = Parallel(n_jobs=min(N_bootstraps,10), verbose=N_bootstraps)(
+    #     delayed(run_bootstrap_iter)(
+    #         model_two_comps["component_params"],
+    #         model_two_comps["weights"],
+    #         sample_sizes,
+    #         constrained,
+    #         init_method,
+    #         init_constraint_adjustment,
+    #         N_restarts,
+    #     )
+    #     for _ in trange(N_bootstraps)
+    # )
+    save_dir = Path(save_dir)
+    bootstrap_jobs = generate_bootstrap_iter_jobs(model_two_comps['component_params'],
+                                                  model_two_comps['weights'],
+                                                  sample_sizes,
+                                                  constrained,
+                                                    init_method,
+                                                    init_constraint_adjustment,
+                                                    N_bootstraps,
+                                                    N_restarts,
+                                                    save_dir/"bootstrap_fits",)
+    
+    jobs_dir = save_dir / 'jobs'
+    jobs_dir.mkdir(exist_ok=True,parents=True)
+    for job_num,job in enumerate(bootstrap_jobs):
+        with open(jobs_dir / f"job_{job_num}.pkl",'wb') as f:
+            pickle.dump(job,f)
+    with open("model_selection_data.pkl",'wb') as f:
+        pickle.dump(selection_results,f)
+    return
     selection_results["bootstrap_results"] = bootstrap_results
     for i, result in enumerate(bootstrap_results):
         if result is None:
@@ -113,33 +138,46 @@ def bootstrapped_likelihood_ratio_test(scoreset: Scoreset, N_bootstraps: int, **
         save_filepath = Path(save_filepath)
         save_filepath.mkdir(parents=True, exist_ok=True)
         with open(save_filepath, "w") as f:
-            json.dump(selection_results, f)
+            json.dump(serialize_dict(selection_results), f)
         print(f"Model selection results written to {save_filepath}")
     print(f"Model selection p-value: {p_value}")
     return selection_results
 
-
-def run_bootstrap_iter(
+def generate_bootstrap_iter_jobs(
     component_params,
     weights,
     sample_sizes,
     constrained,
     init_method,
     init_constraint_adjustment,
+    N_bootstraps,
     N_restarts,
+    save_dir,
 ):
     simulated_scores, simulated_sample_assignments = generate_scoreset(
         component_params, weights, sample_sizes
     )
-    train_indices, val_indices = sample_specific_bootstrap(simulated_sample_assignments)
-    scores_train, sample_assignments_train = (
-        simulated_scores[train_indices],
-        simulated_sample_assignments[train_indices],
-    )
-    scores_val, sample_assignments_val = (
-        simulated_scores[val_indices],
-        simulated_sample_assignments[val_indices],
-    )
+    # train_indices, val_indices = sample_specific_bootstrap(simulated_sample_assignments)
+    # trainScoreset = BasicScoreset(
+    #     simulated_scores[train_indices],
+    #     simulated_sample_assignments[train_indices],
+    # )
+    # valScoreset = BasicScoreset(
+    #     simulated_scores[val_indices],
+    #     simulated_sample_assignments[val_indices],
+    # )
+    fit = Fit(BasicScoreset(simulated_scores,simulated_sample_assignments)) # type: ignore
+    jobs = []
+    for bootstrapIter in range(N_bootstraps):
+        fit_jobs = fit.generate_fit_jobs([2,3],save_dir,
+                                        num_fits=N_restarts,
+                                        score_min=simulated_scores.min(),
+                                        score_max=simulated_scores.max(),
+                                        bootstrap=True,
+                                        bootstrap_seed=bootstrapIter)
+        jobs+=fit_jobs
+    return jobs
+
     bootstrap_model_k2 = fit_iteration(
         scores_train,
         sample_assignments_train,
@@ -189,9 +227,20 @@ def fit_iteration(
     init_method,
     init_constraint_adjustment,
     N_restarts,
-):
-    fits: List[Dict] = [
-        single_fit(
+)->Dict:
+    # fits: List[Dict] = [
+    #     single_fit(
+    #         scores,
+    #         sample_assignments,
+    #         n_components,
+    #         constrained,
+    #         init_method,
+    #         init_constraint_adjustment,
+    #     )
+    #     for _ in trange(N_restarts)
+    # ]
+    fits = list(Parallel(n_jobs=min(os.cpu_count() or 1,N_restarts), verbose=1)(
+        delayed(single_fit)(
             scores,
             sample_assignments,
             n_components,
@@ -199,13 +248,14 @@ def fit_iteration(
             init_method,
             init_constraint_adjustment,
         )
-        for _ in trange(N_restarts)
-    ]
+        for _ in range(N_restarts)
+    ))
+        
     # Sort fits by increasing likelihood
     fits.sort(key=lambda d: d["likelihoods"][-1])
     # Find iteration with best likelihood
     best_fit = fits[-1]
-    return best_fit
+    return best_fit # type: ignore
 
 
 def generate_scoreset(params, weights, sample_sizes):

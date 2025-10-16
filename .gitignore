@@ -12,3 +12,10 @@ wheels/
 bard1/
 .vscode/**/.ipynb_checkpoints/
 *.ipynb_checkpoints
+.vscode/
+test/**/*.json
+test/**/*.pkl
+test/figures/
+
+# Results Directory
+results/*.ipynb

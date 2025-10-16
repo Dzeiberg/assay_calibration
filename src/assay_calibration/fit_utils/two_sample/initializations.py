@@ -39,7 +39,7 @@ def kmeans_init(X, **kwargs):
             # if kwargs.get('verbose', True):
             #     print('KM fixing initial constraint')
             component_parameters = fix_to_satisfy_density_constraint(
-                component_parameters, (X.min(), X.max()), **kwargs
+                component_parameters, **kwargs
             )
         if len(component_parameters) == 0 or any(len(p) == 0 for p in component_parameters):
             repeat += 1
@@ -116,19 +116,21 @@ def methodOfMomentsInit(X, n_components, constrained, max_attempts=1000, **kwarg
     n_components: int: number of components to give initial params for
     max_attempts: max attempts to determine stable cut points
 
+    Optional Args:
+    - method_of_moments_prob_percentile : float (default .7) : probability of using percentile-based cuts for method of moments initialization
     Returns:
     [(skew_1, loc_1, sigma_1), ..., (skew_k, loc_k, sigma_k)] or None upon failure
     '''
-    
+    method_of_moments_prob_percentile = kwargs.get("method_of_moments_prob_percentile",0.7)
     # probabilistic intialization
     for attempt in range(max_attempts):
-        if np.random.rand() < 0.7:  # 70% of the time use percentile-based
+        if np.random.rand() < method_of_moments_prob_percentile:  # (default) 70% of the time use percentile-based
             # Percentiles with random jitter
             base_percentiles = np.linspace(0, 100, n_components + 1)[1:-1]
             percentile_range = np.percentile(X, 75) - np.percentile(X, 25)  # IQR
             jitter = np.random.normal(0, percentile_range * 0.1, len(base_percentiles))
             cutPoints = np.percentile(X, np.sort(np.clip(base_percentiles + jitter, 1, 99)))
-        else:  # 30% random exploration
+        else:  # (default) 30% random exploration
             cutPoints = np.sort(np.random.uniform(
                 np.percentile(X, 5),  # Avoid extreme tails
                 np.percentile(X, 95), 
@@ -166,7 +168,7 @@ def methodOfMomentsInit(X, n_components, constrained, max_attempts=1000, **kwarg
                 # if kwargs.get('verbose', True):
                 #     print('MoM fixing initial constraint')
                 component_parameters = fix_to_satisfy_density_constraint(
-                    component_parameters, (X.min(), X.max()), **kwargs
+                    component_parameters, **kwargs
                 )
 
             if len(component_parameters) == 0 or any(len(p) == 0 for p in component_parameters):
@@ -180,9 +182,9 @@ def methodOfMomentsInit(X, n_components, constrained, max_attempts=1000, **kwarg
 
 
 
-def fix_to_satisfy_density_constraint(component_parameters, xlims, **kwargs):
+def fix_to_satisfy_density_constraint(component_parameters, **kwargs):
     n_components = len(component_parameters)
-
+    xlims = kwargs.get('xlims')
     param_to_adjust = kwargs.get('init_constraint_adjustment','skew')
     assert param_to_adjust == 'skew' or param_to_adjust == 'scale'
     # if kwargs.get('verbose', True):

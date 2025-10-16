@@ -32,7 +32,8 @@ def em_iteration(
     if constrained and multicomponent_density_constraint_violated(
         current_component_params, xlims
     ):
-        raise ValueError("density constraint violated at start of em iteration,")
+        iterNum = kwargs.get('iterNum',None)
+        raise ValueError(f"density constraint violated at start of em iteration {iterNum},")
     N, S = sample_indicators.shape
     K = len(current_component_params)
     assert current_weights.shape == (S, K)

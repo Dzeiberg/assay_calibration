@@ -17,7 +17,7 @@ def process_pickle_file(pickle_path):
         print(f"Error processing {pickle_path}: {e}")
 
 def process_directory(directory):
-    pickle_files = list(Path(directory).glob("*.pkl"))
+    pickle_files = list(Path(directory).rglob("*.pkl"))
     Parallel(n_jobs=-1,
              verbose=100)(delayed(process_pickle_file)(str(pickle_file)) for pickle_file in pickle_files)
 

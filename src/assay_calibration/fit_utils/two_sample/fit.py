@@ -27,7 +27,11 @@ def single_fit(
 
     Optional Parameters (kwargs)
     -------------------------
+    score_min : float, default=None
+        Minimum score
 
+    score_max : float, default=None
+        Maximum score range
 
     max_em_iters : int, default=10000
         Maximum number of EM iterations.
@@ -52,6 +56,8 @@ def single_fit(
     DEPRECATED : submerge_steps : int, optional
         Optional max number of initial steps to explore without constraint. constrained must be set to true.
 
+    
+
     Returns
     -------
     dict
@@ -73,8 +79,14 @@ def single_fit(
     if submerge_steps is not None:# and not constrained:
         # raise ValueError("constrained must be True when submerge_steps is not None.")
         raise NotImplementedError('submerge_steps is deprecated')
-    
-    xlims = (observations.min(), observations.max())
+    score_min = kwargs.get("score_min",None)
+    if score_min is None:
+        score_min = observations.min()
+    score_max = kwargs.get("score_max",None)
+    if score_max is None:
+        score_max = observations.max()
+    xlims = (score_min, score_max)
+    kwargs['xlims'] = xlims
     N_samples = sample_indicators.shape[1]
     if (
         kwargs.get("initial_weights", None) is not None
