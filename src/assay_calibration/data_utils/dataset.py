@@ -134,6 +134,14 @@ class BasicScoreset:
 
 class Scoreset:
     def __init__(self, dataframe: pd.DataFrame, **kwargs):
+        """
+        Required Arg:
+        - dataframe : pd.DataFrame : Pillar Project dataframe
+
+        Optional Arg:
+        - min_clinvar_star : int (default 1) : minimum review status (star count) to use Clinical Significance annotations
+        - clinvar_release : str in {'2025','2018'} (default '2025') : Clinvar release to use
+        """
         self._init_dataframe(dataframe, **kwargs)
 
     def to_json(self, output_path: Path | str):
@@ -203,6 +211,9 @@ class Scoreset:
         dataframe : pd.DataFrame
             The dataframe to initialize the scoreset from
 
+        Optional Arg:
+            - min_clinvar_star : int (default 1) : minimum review status (star count) to use Clinical Significance annotations
+            - clinvar_release : str in {'2025','2018'} (default '2025') : Clinvar release to use
         Returns
         -------
         None
@@ -228,7 +239,9 @@ class Scoreset:
         self.dataframe = dataframe
         self.filter_invalid()
         self.splicing_filter(**kwargs)
-        self.variants = [Variant(row) for _, row in self.dataframe.iterrows()]
+        min_clinvar_star = kwargs.get("min_clinvar_star",1)
+        clinvar_release = kwargs.get("clinvar_release",'2025')
+        self.variants = [Variant(row,min_clinvar_star,clinvar_release) for _, row in self.dataframe.iterrows()]
         self._init_matrices(**kwargs)
 
     def filter_invalid(self):
@@ -404,14 +417,15 @@ class Scoreset:
 
 
 class Variant:
-    def __init__(self, variant_info: pd.Series):
+    def __init__(self, variant_info: pd.Series, min_clinvar_star: int, clinvar_release: str):
+        self.min_clinvar_star = min_clinvar_star
+        self.clinvar_release = clinvar_release
         self._init_variant_info(variant_info)
 
     def _init_variant_info(self, variant_info: pd.Series):
         self.ID = None
         self.simplified_consequence = None
         self.clinvar_star = None
-        self.clinvar_sig = None
         self.gnomad_MAF = None
         self.auth_reported_score = None
         self.transcript_ref = ""
@@ -421,6 +435,8 @@ class Variant:
         self.hgvs_p = ""
         for k, v in variant_info.items():
             setattr(self, str(k), v)
+        self.clinvar_sig = getattr(variant_info,f"clinvar_sig_{self.clinvar_release}")
+        self.clinvar_star = getattr(variant_info,f"clinvar_star_{self.clinvar_release}")
         self.parse_gnomAD_MAF()
         self.parse_clinvar_sig()
         self.parse_consequences()
@@ -442,24 +458,56 @@ class Variant:
         self.is_conflicting = (
             self.clinvar_sig == "Conflicting classifications of pathogenicity"
         )
-        high_quality = self.clinvar_star not in {
-            "no assertion criteria provided",
-            "no classification for the single variant",
-            "no classification provided",
-        }
-        self.is_benign = high_quality and self.clinvar_sig in {
+        self.eval_quality()
+        
+        self.is_benign = self.sufficient_quality and self.clinvar_sig in {
             "Benign",
             "Likely benign",
             "Benign/Likely benign",
         }
-        self.is_pathogenic = high_quality and self.clinvar_sig in {
+        self.is_pathogenic = self.sufficient_quality and self.clinvar_sig in {
             "Pathogenic",
             "Likely pathogenic",
             "Pathogenic/Likely pathogenic",
         }
-        self.is_vus = high_quality and self.clinvar_sig in {
+        self.is_vus = self.sufficient_quality and self.clinvar_sig in {
             "Uncertain significance",
         }
+
+    def eval_quality(self):
+        one_star_status = {
+            'criteria provided, single submitter',
+            'criteria provided, conflicting interpretations',
+            'criteria provided, conflicting classifications',
+
+        }
+        two_star_statuses = {
+            'criteria provided, multiple submitters, no conflicts',
+
+        }
+        three_star_statuses = {
+            'reviewed by expert panel'
+        }
+        zero_star_statuses = {
+            np.nan,
+            'no assertion criteria provided',
+            'no assertion provided',
+            'no interpretation for the single variant',
+            'no classification provided',
+            '-'
+        }
+        if self.min_clinvar_star == 0:
+            self.sufficient_quality = True
+        elif self.min_clinvar_star == 1:
+            self.sufficient_quality = self.clinvar_star not in zero_star_statuses
+        elif self.min_clinvar_star == 2:
+            self.sufficient_quality = self.clinvar_star not in zero_star_statuses.union(one_star_status)
+        elif self.min_clinvar_star == 3:
+            self.sufficient_quality = self.clinvar_star not in zero_star_statuses.union(one_star_status).union(two_star_statuses)
+        elif self.min_clinvar_star == 4:
+            self.sufficient_quality = self.clinvar_star not in zero_star_statuses.union(one_star_status).union(two_star_statuses).union(three_star_statuses)
+        else:
+            raise ValueError(f"Invalid min_clinvar_star value {self.min_clinvar_star}")
 
     def parse_gnomAD_MAF(self):
         """
