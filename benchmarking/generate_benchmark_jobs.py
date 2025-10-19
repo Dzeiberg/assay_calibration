@@ -6,9 +6,11 @@ from pathlib import Path
 import pickle
 import argparse
 import sys
+from typing import Dict,Tuple
 sys.path.append(str(Path(__file__).parent.parent))
 from src.assay_calibration.data_utils.dataset import Scoreset
 from src.assay_calibration.fit_utils.fit import Fit
+
 
 def load_dataframe(dataframe_filepath):
     df = pd.read_csv(dataframe_filepath)
@@ -31,13 +33,14 @@ def initialize_scoreset_params():
                     ("LARGE1_Ma_2024",['clinvar_2025_0star'])]
     return scoreset_params, scoreset_args
 
-def generate_scoresets(df, scoreset_params, scoreset_args):
+def generate_scoresets(df, scoreset_params, scoreset_args)->Dict[Tuple[str,str],Scoreset]:
     scoresets = {}
     for scoreset_name, scoreset_paramsets in tqdm(scoreset_args):
         scoreset_df = df[df.Dataset == scoreset_name]
         for paramset_name in tqdm(scoreset_paramsets,leave=False):
             scoreset = Scoreset(scoreset_df,**scoreset_params[paramset_name].__dict__)
             scoresets[(scoreset_name,paramset_name)] = scoreset
+    return scoresets
 
 def generate_jobs(scoresets, fits_save_rt, jobs_save_rt, **kwargs):
     NBootstraps = kwargs.get("NBootstraps",1000)
