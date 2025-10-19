@@ -10,6 +10,7 @@ from typing import Dict,Tuple
 sys.path.append(str(Path(__file__).parent.parent))
 from src.assay_calibration.data_utils.dataset import Scoreset
 from src.assay_calibration.fit_utils.fit import Fit
+from joblib import Parallel, delayed
 
 
 def load_dataframe(dataframe_filepath):
@@ -46,22 +47,20 @@ def generate_jobs(scoresets, fits_save_rt, jobs_save_rt, **kwargs):
     NBootstraps = kwargs.get("NBootstraps",1000)
     fits_save_rt = Path(fits_save_rt)
     jobs_save_rt = Path(jobs_save_rt)
-    total_jobs = 0
     for (scoreset_name,paramset_name), scoreset in tqdm(list(scoresets.items())):
         fit = Fit(scoreset)
         uid = "_".join((scoreset_name,paramset_name))
         jobs_save_dir = jobs_save_rt / uid
         jobs_save_dir.mkdir(exist_ok=True,parents=True)
-        for bootstrap_seed in trange(NBootstraps,leave=False):
-            scoreset_jobs = fit.generate_fit_jobs([2,3],
+        def generate_job(bootstrap_seed):
+            jobs = fit.generate_fit_jobs([2,3],
                                                 fits_save_rt / "_".join((scoreset_name,paramset_name)),
                                                 bootstrap_seed=bootstrap_seed)
-            for jobNum,job in enumerate(scoreset_jobs):
+            for jobNum,job in enumerate(jobs):
                 with open(jobs_save_dir / f"job_{job['job_id']}.pkl",'wb') as f:
                     pickle.dump(job,f)
-                total_jobs+=1
-    print(f"Wrote {total_jobs:,d} jobs to {jobs_save_rt}")
-
+        Parallel(n_jobs=-1,verbose=10)(delayed(generate_job)(bootstrap_seed) for bootstrap_seed in range(NBootstraps))
+        
 def main(dataframe_filepath, fits_save_rt, jobs_save_rt):
     df = load_dataframe(dataframe_filepath)
     scoreset_params, scoreset_args = initialize_scoreset_params()
