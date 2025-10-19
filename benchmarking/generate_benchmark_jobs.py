@@ -27,7 +27,7 @@ def initialize_scoreset_params():
                                     min_clinvar_star=0),
     'clinvar_2025_2star': Namespace(clinvar_release='2025',
                                     min_clinvar_star=2)}
-    scoreset_args = [("BRCA1_Findlay_2018",list(scoreset_params.keys())),
+    scoreset_args = [#("BRCA1_Findlay_2018",list(scoreset_params.keys())),
                     ("MSH2_Jia_2021", list(scoreset_params.keys())),
                     ("VHL_Buckley_2024", ['clinvar_2025_0star','clinvar_2025_2star']),
                     ('FKRP_Ma_2024',['clinvar_2025_0star',]),
@@ -60,12 +60,12 @@ def generate_jobs(scoresets, fits_save_rt, jobs_save_rt, **kwargs):
                 with open(jobs_save_dir / f"job_{job['job_id']}.pkl",'wb') as f:
                     pickle.dump(job,f)
         Parallel(n_jobs=-1,verbose=10)(delayed(generate_job)(bootstrap_seed) for bootstrap_seed in range(NBootstraps))
-        
-def main(dataframe_filepath, fits_save_rt, jobs_save_rt):
+
+def main(dataframe_filepath, fits_save_rt, jobs_save_rt,**kwargs):
     df = load_dataframe(dataframe_filepath)
     scoreset_params, scoreset_args = initialize_scoreset_params()
     scoresets = generate_scoresets(df, scoreset_params, scoreset_args)
-    generate_jobs(scoresets, fits_save_rt,jobs_save_rt)
+    generate_jobs(scoresets, fits_save_rt,jobs_save_rt,**kwargs)
 
 if __name__ == "__main__":
 
@@ -77,4 +77,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args.dataframe_filepath, args.fits_save_rt, args.jobs_save_rt)
+    main(args.dataframe_filepath, args.fits_save_rt, args.jobs_save_rt,NBootstraps=args.NBootstraps)
