@@ -336,6 +336,10 @@ class Scoreset:
                 self._sample_assignments[idx, 0] = True
             if any([variant.is_benign for variant in variants]):
                 self._sample_assignments[idx, 1] = True
+        keep_mask = self._sample_assignments.any(axis=1)
+        self._scores = self.scores[keep_mask]
+        self._sample_assignments = self._sample_assignments[keep_mask]
+        self.n_variants = len(self._scores)
         self.sample_counts = self._sample_assignments.sum(axis=0)
 
     def parse_population_type(self,**kwargs):
