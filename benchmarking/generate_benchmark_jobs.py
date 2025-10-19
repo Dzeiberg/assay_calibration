@@ -34,12 +34,12 @@ def initialize_scoreset_params():
                     ("LARGE1_Ma_2024",['clinvar_2025_0star'])]
     return scoreset_params, scoreset_args
 
-def generate_scoresets(df, scoreset_params, scoreset_args)->Dict[Tuple[str,str],Scoreset]:
+def generate_scoresets(df, scoreset_params, scoreset_args,**kwargs)->Dict[Tuple[str,str],Scoreset]:
     scoresets = {}
     for scoreset_name, scoreset_paramsets in tqdm(scoreset_args):
         scoreset_df = df[df.Dataset == scoreset_name]
         for paramset_name in tqdm(scoreset_paramsets,leave=False):
-            scoreset = Scoreset(scoreset_df,**scoreset_params[paramset_name].__dict__)
+            scoreset = Scoreset(scoreset_df,**scoreset_params[paramset_name].__dict__,**kwargs)
             scoresets[(scoreset_name,paramset_name)] = scoreset
     return scoresets
 
@@ -64,7 +64,7 @@ def generate_jobs(scoresets, fits_save_rt, jobs_save_rt, **kwargs):
 def main(dataframe_filepath, fits_save_rt, jobs_save_rt,**kwargs):
     df = load_dataframe(dataframe_filepath)
     scoreset_params, scoreset_args = initialize_scoreset_params()
-    scoresets = generate_scoresets(df, scoreset_params, scoreset_args)
+    scoresets = generate_scoresets(df, scoreset_params, scoreset_args,**kwargs)
     generate_jobs(scoresets, fits_save_rt,jobs_save_rt,**kwargs)
 
 if __name__ == "__main__":
@@ -74,7 +74,10 @@ if __name__ == "__main__":
     parser.add_argument("fits_save_rt", type=str, help="Root directory to save fit results.")
     parser.add_argument("jobs_save_rt", type=str, help="Root directory to save generated jobs.")
     parser.add_argument("--NBootstraps", type=int, default=1000, help="Number of bootstraps to generate (default: 1000).")
+    parser.add_argument("--synonymous_exclusive", type=bool, default=True, help="if true, use synonymous variants only in the synonymous sample,regardless of whether or not they're in ClinVar or gnomAD.")
 
     args = parser.parse_args()
 
-    main(args.dataframe_filepath, args.fits_save_rt, args.jobs_save_rt,NBootstraps=args.NBootstraps)
+    main(args.dataframe_filepath, args.fits_save_rt, args.jobs_save_rt,
+         NBootstraps=args.NBootstraps,
+         synonymous_exclusive=args.synonymous_exclusive)
