@@ -65,14 +65,14 @@ def main(dataframe_filepath, fits_save_rt, jobs_save_rt):
     scoresets = generate_scoresets(df, scoreset_params, scoreset_args)
     generate_jobs(scoresets, fits_save_rt,jobs_save_rt)
 
-    if __name__ == "__main__":
+if __name__ == "__main__":
 
-        parser = argparse.ArgumentParser(description="Generate benchmark jobs for assay calibration.")
-        parser.add_argument("dataframe_filepath", type=str, help="Path to the input dataframe CSV file.")
-        parser.add_argument("fits_save_rt", type=str, help="Root directory to save fit results.")
-        parser.add_argument("jobs_save_rt", type=str, help="Root directory to save generated jobs.")
-        parser.add_argument("--NBootstraps", type=int, default=1000, help="Number of bootstraps to generate (default: 1000).")
+    parser = argparse.ArgumentParser(description="Generate benchmark jobs for assay calibration.")
+    parser.add_argument("dataframe_filepath", type=str, help="Path to the input dataframe CSV file.")
+    parser.add_argument("fits_save_rt", type=str, help="Root directory to save fit results.")
+    parser.add_argument("jobs_save_rt", type=str, help="Root directory to save generated jobs.")
+    parser.add_argument("--NBootstraps", type=int, default=1000, help="Number of bootstraps to generate (default: 1000).")
 
-        args = parser.parse_args()
+    args = parser.parse_args()
 
-        main(args.dataframe_filepath, args.fits_save_rt, args.jobs_save_rt)
+    main(args.dataframe_filepath, args.fits_save_rt, args.jobs_save_rt)
