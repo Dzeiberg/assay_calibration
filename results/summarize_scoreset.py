@@ -1,6 +1,5 @@
 import sys
 import os
-import math
 from pathlib import Path
 import json
 import numpy as np
@@ -9,7 +8,6 @@ from joblib import Parallel, delayed
 import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
-import scipy.stats as sps
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 sys.path.append(str(Path(__file__).parents[1]))
 from src.assay_calibration.fit_utils.fit import (calculate_score_ranges,thresholds_from_prior)  # noqa: E402
@@ -43,12 +41,14 @@ def summarize_scoreset(fits,scoreset,save_filepath, **kwargs):
         Either `df` or `pillar_df_filepath` must be provided in `args`. If both are 
         provided, `df` takes precedence.
     """
-    priors, point_ranges, score_range, log_fp, log_fb = process_fits(fits,scoreset,)
+    priors, point_ranges, score_range, log_fp, log_fb, all_path_ranges, all_ben_ranges = process_fits(fits,scoreset,)
     results = dict(prior=np.nanmedian(priors),
                    point_ranges=point_ranges,
                    priors=priors,
                    score_range=score_range,
-                   log_lr_plus=log_fp - log_fb)
+                   log_lr_plus=log_fp - log_fb,
+                   all_path_ranges=all_path_ranges,
+                   all_ben_ranges=all_ben_ranges)
     results = serialize_dict(results)
     save_filepath = Path(save_filepath)
     save_filepath.parent.mkdir(exist_ok=True,parents=True)
@@ -67,14 +67,12 @@ def summarize_scoreset(fits,scoreset,save_filepath, **kwargs):
     summary_fig.savefig(summary_figure_filepath,bbox_inches='tight',dpi=300)
     plt.close(summary_fig)
 
-def process_fits(fits, scoreset,**kwargs)->Tuple[np.ndarray,Dict[int,List[Tuple[float,float]]],np.ndarray,np.ndarray,np.ndarray]:
+def process_fits(fits, scoreset,**kwargs)->Tuple[np.ndarray,Dict[int,List[Tuple[float,float]]],np.ndarray,np.ndarray,np.ndarray,List[Dict[int,List[Tuple[float,float]]]],List[Dict[int,List[Tuple[float,float]]]]]:
     n_cores = os.cpu_count() or 1
     fit_priors = np.array(Parallel(n_jobs=min(len(fits), n_cores), verbose=10)(delayed(get_fit_prior)(fit, scoreset, **kwargs)
                                for fit in fits))
     point_values = kwargs.get('point_values',[1,2,3,4,5,6,7,8])
     prior = np.nanmedian(fit_priors)
-    if np.isnan(prior) or prior == 0 or prior == 1:
-        raise ValueError(f"Invalid prior estimate {prior} for scoreset {scoreset.scoreset_name}")
     observed_scores = scoreset.scores[scoreset._sample_assignments.any(1)]
     score_range = np.linspace(*np.percentile(observed_scores,[0,100]),10000) # type: ignore
 
@@ -84,26 +82,35 @@ def process_fits(fits, scoreset,**kwargs)->Tuple[np.ndarray,Dict[int,List[Tuple[
                        for _fit in fits])
     log_fp = np.full((len(fits),len(score_range)),np.nan)
     log_fb = np.full((len(fits),len(score_range)),np.nan)
+    ranges_pathogenic = []
+    ranges_benign = []
+    
     for fitIdx,(fit, fp,fb) in enumerate(zip(fits, _log_fp,_log_fb)):
         fit_xmin,fit_xmax = fit['fit']['xlims']
         mask = (score_range >= fit_xmin) & (score_range <= fit_xmax)
         log_fp[fitIdx,mask] = fp[mask]
         log_fb[fitIdx,mask] = fb[mask]
-    
-    
+        lrP = log_fp[fitIdx,mask] - log_fb[fitIdx,mask]
+        s = score_range[mask]
+        ranges_p, ranges_b = calculate_score_ranges(lrP,lrP, fit_priors[fitIdx],s,
+                                                    point_values)
+        ranges_pathogenic.append(ranges_p)
+        ranges_benign.append(ranges_b)
+
     log_lr_plus = log_fp - log_fb
     nan_counts = np.isnan(log_lr_plus).sum(0)
     range_subset = nan_counts < log_lr_plus.shape[0]
-
-    point_ranges_pathogenic, point_ranges_benign = calculate_score_ranges(np.nanpercentile(log_lr_plus[:,range_subset],
-                                                                                           5,axis=0),
-                                                                            np.nanpercentile(log_lr_plus[:,range_subset],
-                                                                                             95,axis=0),
-                                                                            prior,
-                                                                            score_range[range_subset],
-                                                                            point_values,)
-    point_ranges = {**point_ranges_pathogenic,**point_ranges_benign}
-    return fit_priors, point_ranges,score_range[range_subset],log_fp[:,range_subset], log_fb[:,range_subset]
+    point_ranges = {}
+    if prior > 0 and prior < 1:
+        point_ranges_pathogenic, point_ranges_benign = calculate_score_ranges(np.nanpercentile(log_lr_plus[:,range_subset],
+                                                                                            5,axis=0),
+                                                                                np.nanpercentile(log_lr_plus[:,range_subset],
+                                                                                                95,axis=0),
+                                                                                prior,
+                                                                                score_range[range_subset],
+                                                                                point_values,)
+        point_ranges = {**point_ranges_pathogenic,**point_ranges_benign}
+    return fit_priors, point_ranges,score_range[range_subset],log_fp[:,range_subset], log_fb[:,range_subset], ranges_pathogenic, ranges_benign
     
 
 
@@ -123,7 +130,6 @@ def get_fit_prior(fit, scoreset,**kwargs):
     assert len(benign_density) == len(population)
     prior_estimate = 0.5
     converged = False
-    tolerance = kwargs.get("tolerance", 1e-4)
     em_steps = 0
     max_em_steps = kwargs.get("max_em_steps",10000)
     while not converged:
@@ -206,72 +212,3 @@ def plot_summary(scoreset: Scoreset, fits: List[Dict], summary:Dict, score_range
     ax.set_ylabel("Log LR+")
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     return fig
-
-def stable_alpha(beta, Log_LRs, eps=1e-12, min_lr=1e-12):
-    """
-    Compute alpha = averaged posterior probability given prior beta and positive LRs.
-    Uses log-odds for numerical stability.
-
-    Args:
-      beta: current prior probability in (0,1) (float)
-      Log_LRs: fixed iterable of positive likelihood ratios (floats)
-      eps: small value to clamp beta away from 0/1
-      min_lr: small positive value to clamp LRs away from 0
-
-    Returns:
-      alpha: posterior probability in (0,1)
-    """
-    # raise NotImplementedError("This function has not been tested yet.")
-    # clamp beta into (eps, 1-eps)
-    beta = min(max(beta, eps), 1.0 - eps)
-
-    # safe logit: log(beta) - log(1-beta) using log1p for stability
-    logit_beta = math.log(beta) - math.log1p(-beta)
-
-    # # sum logs of LRs, clamping any non-positive LR to min_lr
-    # s = 0.0
-    # for llr in Log_LRs:
-    #     if llr <= 0.0:
-    #         lr = min_lr
-    #     s += math.log(lr)
-    s = np.sum(Log_LRs)
-
-    # log-odds of posterior
-    log_odds_post = logit_beta + Log_LRs
-
-    # stable sigmoid: avoid overflow for large +/- values
-    mask_gt = log_odds_post >= 0
-    posts = np.zeros_like(Log_LRs)
-    posts[mask_gt] = 1.0 / (1.0 + np.exp(-log_odds_post[mask_gt]))
-    posts[~mask_gt] = np.exp(log_odds_post[~mask_gt]) / (1.0 + np.exp(log_odds_post[~mask_gt]))
-    # if log_odds_post >= 0:
-    #     z = math.exp(-log_odds_post)
-    #     alpha = 1.0 / (1.0 + z)
-    # else:
-    #     z = math.exp(log_odds_post)
-    #     alpha = z / (1.0 + z)
-    alpha = np.mean(posts)
-    return alpha
-
-def basic_alpha(beta, benign_density, pathogenic_density):
-    posteriors = 1 / (
-            1
-            + (1 - beta)
-            / beta
-            * benign_density # type: ignore
-            / pathogenic_density
-        )
-    return np.nanmean(posteriors)
-
-def test_stable():
-    beta = 1-1e-6
-    scores = np.concatenate((sps.norm.rvs(loc=-12,scale=2,size=1000000),
-                             sps.norm.rvs(loc=12,scale=2,size=900)))
-
-    Log_LRS = sps.norm.logpdf(scores,loc=-3,scale=2) - \
-                sps.norm.logpdf(scores,loc=3,scale=2)
-    alphaHatStable = stable_alpha(beta,Log_LRS)
-    path_density = sps.norm.pdf(scores,loc=-3,scale=2)
-    ben_density = sps.norm.pdf(scores,loc=3,scale=2)
-    alphaHatBasic = basic_alpha(beta, ben_density, path_density)
-    assert np.isclose(alphaHatBasic,alphaHatStable), f"Basic Estimate ({alphaHatBasic:.5f}) not close to Stable Estimate ({alphaHatStable:.5f})"
