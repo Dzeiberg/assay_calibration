@@ -11,6 +11,8 @@ def mixture_pdf(x, params, weights):
     """
     return logsumexp(log_joint_densities(x, params, weights), axis=0)
 
+def get_log_fPB(X, params, weights):
+    return np.log(joint_densities(X, params, weights).sum(0))
 
 def joint_densities(x, params, weights):
     """
@@ -133,4 +135,21 @@ def get_likelihood(observations, sample_indicators, component_params, weights):
         # Sum across components using logsumexp
         log_sample_likelihood = logsumexp(log_weighted_pdfs, axis=0)
         Likelihood += log_sample_likelihood.sum()
-    return Likelihood
+    return Likelihood # LOG LIKELIHOOD
+
+
+def get_sample_likelihood(observations, sample_indicators, component_params, weights):
+    if component_params is None or weights is None:
+        return [-1 * np.inf]*len(sample_indicators.T)
+    Likelihoods = [0]*len(sample_indicators.T)
+    for sample_num, sample_mask in enumerate(sample_indicators.T):
+        X = observations[sample_mask]
+        # sample_likelihood = joint_densities(
+        #     X, component_params, weights[sample_num]
+        # ).sum(axis=0)
+        # Likelihood += np.log(sample_likelihood).sum().item()
+        log_weighted_pdfs = log_joint_densities(X, component_params, weights[sample_num])
+        # Sum across components using logsumexp
+        log_sample_likelihood = logsumexp(log_weighted_pdfs, axis=0)
+        Likelihoods[sample_num] += log_sample_likelihood.sum()
+    return np.array(Likelihoods) # LOG LIKELIHOODS
